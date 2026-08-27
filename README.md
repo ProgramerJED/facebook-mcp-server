@@ -1,136 +1,85 @@
-# Facebook MCP Server
+# Facebook MCP Server — Sites Engine hardened fork
 
-This project is a **MCP server** for automating and managing interactions on a Facebook Page using the Facebook Graph API. It exposes tools to create posts, moderate comments, fetch post insights, and filter negative feedback — ready to plug into Claude, or other LLM-based agents.
+An MCP server that lets an agent (Claude, etc.) manage a **single Facebook Page** through
+the Meta Graph API: publish and schedule posts, upload images, moderate comments, and read
+insights. This is a hardened fork of
+[HagaiHen/facebook-mcp-server](https://github.com/HagaiHen/facebook-mcp-server) (MIT),
+adapted to the Sites Engine standards.
 
-[![Trust Score](https://archestra.ai/mcp-catalog/api/badge/quality/HagaiHen/facebook-mcp-server)](https://archestra.ai/mcp-catalog/hagaihen__facebook-mcp-server)
-<a href="https://glama.ai/mcp/servers/@HagaiHen/facebook-mcp-server">
-  <img width="380" height="200" src="https://glama.ai/mcp/servers/@HagaiHen/facebook-mcp-server/badge" />
-</a>
+## What this fork changes (hardening + sanitization)
 
----
+- **Errors surface, not hide.** The upstream `_request` returned `response.json()` even on
+  HTTP 4xx/5xx, so a Graph API error looked like success. Every call now checks the status
+  and raises a typed **`FacebookAPIError`** carrying the Meta error code — never a silent
+  bad payload.
+- **The Page token never leaks.** The token is sent to the Graph API as usual but is
+  redacted (`sanitize.scrub`) from every error message / log line — it can't end up in a
+  traceback, a URL, or a tool result.
+- **Bounded requests.** Every call has a **timeout**, and rate-limit / transient errors
+  (HTTP 429, Meta codes 4/17/32/341/613) are **retried with backoff** (configurable).
+- **Unsolicited DMs removed.** The `send_dm_to_user` tool was deleted — unsolicited
+  Messenger DMs violate Meta policy and need special permissions.
+- **Credentials validated + injectable.** A clear error when the token/page id are unset;
+  `FacebookAPI(...)` accepts explicit overrides so **tests need no real token or network**.
+- **Tests + CI.** A pytest suite (Graph API stubbed — no real calls) and a GitHub Actions
+  workflow run on every push/PR.
 
-## 🤖 What Is This?
+## Setup
 
-This MCP provides a suite of AI-callable tools that connect directly to a Facebook Page, abstracting common API operations as LLM-friendly functions.
+1. Create a **Meta App** and get a long-lived **Page access token** for your Page
+   (https://developers.facebook.com/tools/explorer). Production posting needs App Review for
+   `pages_manage_posts` + `pages_read_engagement`.
+2. Configure the environment (a local `.env` is supported and git-ignored):
 
-### ✅ Benefits
+   ```env
+   FACEBOOK_ACCESS_TOKEN=your_long_lived_page_access_token
+   FACEBOOK_PAGE_ID=your_page_id
+   # optional
+   FACEBOOK_GRAPH_API_VERSION=v22.0
+   FACEBOOK_REQUEST_TIMEOUT_SECONDS=15
+   FACEBOOK_MAX_RETRIES=2
+   ```
 
-- Empowers **social media managers** to automate moderation and analytics.
-- Seamlessly integrates with **Claude Desktop or any Agent client**.
-- Enables fine-grained control over Facebook content from natural language.
+3. Install and run:
 
----
+   ```bash
+   pip install -r requirements.txt
+   python server.py
+   ```
 
-## 📦 Features
+4. Point your MCP client at `server.py` (stdio). The token is read from the environment —
+   **never** hard-code it or commit a `.env`.
 
-| Tool                             | Description                                                         |
-|----------------------------------|---------------------------------------------------------------------|
-| `post_to_facebook`               | Create a new Facebook post with a message.                          |
-| `reply_to_comment`               | Reply to a specific comment on a post.                              |
-| `get_page_posts`                 | Retrieve recent posts from the Page.                                |
-| `get_post_comments`              | Fetch comments on a given post.                                     |
-| `delete_post`                    | Delete a specific post by ID.                                       |
-| `delete_comment`                 | Delete a specific comment by ID.                                    |
-| `hide_comment`                   | Hide a comment from public view.                         |
-| `unhide_comment`                 | Unhide a previously hidden comment.                      |
-| `delete_comment_from_post`       | Alias for deleting a comment from a specific post.                  |
-| `filter_negative_comments`       | Filter out comments with negative sentiment keywords.               |
-| `get_number_of_comments`         | Count the number of comments on a post.                             |
-| `get_number_of_likes`            | Count the number of likes on a post.                                |
-| `get_post_impressions`           | Get total impressions on a post.                                    |
-| `get_post_impressions_unique`    | Get number of unique users who saw the post.                        |
-| `get_post_impressions_paid`      | Get number of paid impressions on the post.                         |
-| `get_post_impressions_organic`   | Get number of organic impressions on the post.                      |
-| `get_post_engaged_users`         | Get number of users who engaged with the post.                      |
-| `get_post_clicks`                | Get number of clicks on the post.                                   |
-| `get_post_reactions_like_total`  | Get total number of 'Like' reactions.                               |
-| `get_post_top_commenters`        | Get the top commenters on a post.                                   |
-| `post_image_to_facebook`         | Post an image with a caption to the Facebook page.                  |
-| `send_dm_to_user`                | Send a direct message to a user.                                    |
-| `update_post`                    | Updates an existing post's message.                                 |
-| `schedule_post`                  | Schedule a post for future publication.                     |
-| `get_page_fan_count`             | Retrieve the total number of Page fans.                     |
-| `get_post_share_count`           | Get the number of shares on a post.                         |
-| `get_post_reactions_breakdown`   | Get all reaction counts for a post in one call.              |
-| `bulk_delete_comments`           | Delete multiple comments by ID.                              |
-| `bulk_hide_comments`             | Hide multiple comments by ID.                               |
-| `bulk_unhide_comments`           | Unhide multiple comments by ID.                             |
-| `get_comment_replies`            | Get all replies to a specific comment.                      |
-| `get_post_permalink`             | Get the permalink URL of a post.                            |
-| `get_scheduled_posts`            | List all scheduled (unpublished) posts on the Page.         |
-| `get_page_info`                  | Get extended Page details (name, about, category, website). |
+## Tools
 
----
+Posting: `post_to_facebook`, `post_image_to_facebook`, `update_post`, `delete_post`,
+`schedule_post`, `get_scheduled_posts`, `get_page_posts`, `get_post_permalink`.
+Comments: `reply_to_comment`, `get_post_comments`, `get_comment_replies`, `hide_comment`,
+`unhide_comment`, `delete_comment`, `bulk_hide_comments`, `bulk_unhide_comments`,
+`bulk_delete_comments`, `filter_negative_comments`, `get_post_top_commenters`.
+Insights: `get_post_insights` and per-metric variants (impressions total/unique/paid/organic,
+engaged users, clicks, reactions), `get_post_reactions_breakdown`, `get_number_of_likes`,
+`get_number_of_comments`, `get_post_share_count`, `get_page_fan_count`.
+Page: `get_page_info`.
 
-## 🚀 Setup & Installation
-
-### 1. Clone the Repository
+## Development
 
 ```bash
-git clone https://github.com/your-org/facebook-mcp-server.git
-cd facebook-mcp-server
+pip install -r requirements-dev.txt
+pytest -q
 ```
 
-### 2. 🛠️ Installation
+Tests stub `requests` entirely — they never hit Facebook and need no credentials.
 
-Install dependencies using uv, a fast Python package manager:
-If uv is not already installed, run:
-```bash
-curl -Ls https://astral.sh/uv/install.sh | bash
-```
+## Security notes
 
-Once uv is installed, install the project dependencies:
-```bash
-uv pip install -r requirements.txt
-```
+- The Page token is a powerful credential. Keep it only in the environment (or a secrets
+  manager), never in the repo, and rotate it if exposed.
+- All logs/errors are scrubbed of token-like strings, but treat any output as potentially
+  sensitive and avoid piping raw tool results into public channels.
 
-### 3. Set Up Environment
+## Attribution & license
 
-Create a .env file in the root directory and add your Facebook Page credentials. 
-You can obtain these from  https://developers.facebook.com/tools/explorer
-
-```bash
-FACEBOOK_ACCESS_TOKEN=your_facebook_page_access_token
-FACEBOOK_PAGE_ID=your_page_id
-```
-
-## 🧩 Using with Claude Desktop
-To set up the FacebookMCP in Clade:
-
-1.	Open Clade.
-2.	Go to Settings → Developer → Edit Config.
-3.	In the config file that opens, add the following entry:
-
-```bash
-"FacebookMCP": {
-  "command": "uv",
-  "args": [
-    "run",
-    "--with",
-    "mcp[cli]",
-    "--with",
-    "requests",
-    "mcp",
-    "run",
-    "/path/to/facebook-mcp-server/server.py"
-  ]
-}
-```
-
----
-
-## ✅ You’re Ready to Go!
-
-That’s it — your Facebook MCP server is now fully configured and ready to power Claude Desktop. You can now post, moderate, and measure engagement all through natural language prompts!
-
----
-
-## 🤝 Contributing
-
-Contributions, issues, and feature requests are welcome!  
-Feel free to fork the repo and submit a pull request.
-
-- Create a branch: `git checkout -b feature/YourFeature`
-- Commit your changes: `git commit -m 'feat: add new feature'`
-- Push to the branch: `git push origin feature/YourFeature`
-- Open a pull request 🎉
+Fork of **[HagaiHen/facebook-mcp-server](https://github.com/HagaiHen/facebook-mcp-server)**,
+MIT-licensed. This fork keeps the original MIT `LICENSE`; the hardening/tests above are
+additional modifications for the Sites Engine project.
