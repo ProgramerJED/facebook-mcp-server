@@ -100,9 +100,6 @@ class Manager:
     def post_image_to_facebook(self, image_url: str, caption: str) -> dict[str, Any]:
         return self.api.post_image_to_facebook(image_url, caption)
 
-    def send_dm_to_user(self, user_id: str, message: str) -> dict[str, Any]:
-        return self.api.send_dm_to_user(user_id, message)
-    
     def update_post(self, post_id: str, new_message: str) -> dict[str, Any]:
         return self.api.update_post(post_id, new_message)
 
