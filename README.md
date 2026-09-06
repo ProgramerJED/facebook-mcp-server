@@ -1,6 +1,6 @@
 # Facebook MCP Server — Sites Engine hardened fork
 
-An MCP server that lets an agent (Claude, etc.) manage a **single Facebook Page** through
+An MCP server that lets an agent (Claude, etc.) manage **one or more Facebook Pages** through
 the Meta Graph API: publish and schedule posts, upload images, moderate comments, and read
 insights. This is a hardened fork of
 [HagaiHen/facebook-mcp-server](https://github.com/HagaiHen/facebook-mcp-server) (MIT),
@@ -50,6 +50,49 @@ adapted to the Sites Engine standards.
 4. Point your MCP client at `server.py` (stdio). The token is read from the environment —
    **never** hard-code it or commit a `.env`.
 
+## Multiple accounts (multiple Pages)
+
+The server can drive more than one Facebook Page. Every tool takes an optional
+`account` argument selecting which configured Page to act on; omit it (or pass an empty
+string) to use the default account.
+
+**Configure accounts with a JSON file** referenced by `FACEBOOK_ACCOUNTS_FILE`. The
+file's top level is an object of `account_key -> { page_id, access_token, graph_api_version? }`
+(`graph_api_version` is optional and defaults to `FACEBOOK_GRAPH_API_VERSION` / `v22.0`):
+
+```json
+{
+  "brand_a": {
+    "page_id": "1112223334445556",
+    "access_token": "EAA...brand_a_page_token",
+    "graph_api_version": "v22.0"
+  },
+  "brand_b": {
+    "page_id": "9998887776665554",
+    "access_token": "EAA...brand_b_page_token"
+  }
+}
+```
+
+```env
+FACEBOOK_ACCOUNTS_FILE=/absolute/path/to/facebook-accounts.json
+# optional — which account is used when a tool is called without `account`
+FACEBOOK_DEFAULT_ACCOUNT=brand_a
+```
+
+Keep the accounts file **out of the repo** (same treatment as a token) — it contains Page
+access tokens. If `FACEBOOK_DEFAULT_ACCOUNT` is unset, the default is the sole configured
+account when only one exists, otherwise the literal key `default`.
+
+**Back-compat (single-Page setup keeps working).** If you already run with
+`FACEBOOK_ACCESS_TOKEN` + `FACEBOOK_PAGE_ID`, nothing changes — those credentials are
+exposed as an account under the `FACEBOOK_DEFAULT_ACCOUNT` key (default `default`) and are
+used whenever a tool is called without an `account`. You can add a `FACEBOOK_ACCOUNTS_FILE`
+alongside the legacy env vars; both sets of accounts are merged.
+
+Use **`list_facebook_accounts`** to see the configured account keys and their `page_id`s
+(access tokens are never returned).
+
 ## Tools
 
 Posting: `post_to_facebook`, `post_image_to_facebook`, `update_post`, `delete_post`,
@@ -61,6 +104,10 @@ Insights: `get_post_insights` and per-metric variants (impressions total/unique/
 engaged users, clicks, reactions), `get_post_reactions_breakdown`, `get_number_of_likes`,
 `get_number_of_comments`, `get_post_share_count`, `get_page_fan_count`.
 Page: `get_page_info`.
+Accounts: `list_facebook_accounts` (lists configured account keys + page ids; no tokens).
+
+Every tool above (except `filter_negative_comments`, which is pure) accepts an optional
+`account` argument to target a specific configured Page; omit it to use the default.
 
 ## Development
 
