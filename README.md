@@ -35,7 +35,7 @@ adapted to the Sites Engine standards.
    FACEBOOK_ACCESS_TOKEN=your_long_lived_page_access_token
    FACEBOOK_PAGE_ID=your_page_id
    # optional
-   FACEBOOK_GRAPH_API_VERSION=v22.0
+   FACEBOOK_GRAPH_API_VERSION=v25.0
    FACEBOOK_REQUEST_TIMEOUT_SECONDS=15
    FACEBOOK_MAX_RETRIES=2
    ```
@@ -58,14 +58,14 @@ string) to use the default account.
 
 **Configure accounts with a JSON file** referenced by `FACEBOOK_ACCOUNTS_FILE`. The
 file's top level is an object of `account_key -> { page_id, access_token, graph_api_version? }`
-(`graph_api_version` is optional and defaults to `FACEBOOK_GRAPH_API_VERSION` / `v22.0`):
+(`graph_api_version` is optional and defaults to `FACEBOOK_GRAPH_API_VERSION` / `v25.0`):
 
 ```json
 {
   "brand_a": {
     "page_id": "1112223334445556",
     "access_token": "EAA...brand_a_page_token",
-    "graph_api_version": "v22.0"
+    "graph_api_version": "v25.0"
   },
   "brand_b": {
     "page_id": "9998887776665554",

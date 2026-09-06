@@ -215,3 +215,15 @@ def test_list_accounts_returns_keys_and_page_ids_no_token(tmp_path, monkeypatch)
     assert "SECRET_A" not in blob
     assert "SECRET_B" not in blob
     assert all(set(a) == {"account", "page_id"} for a in listing["accounts"])
+
+
+def test_default_graph_api_version_is_v25(monkeypatch):
+    """The pinned default Graph API version is v25.0 when no env override is set."""
+    import importlib
+    monkeypatch.delenv("FACEBOOK_GRAPH_API_VERSION", raising=False)
+    reloaded = importlib.reload(config)
+    try:
+        assert reloaded.GRAPH_API_VERSION == "v25.0"
+        assert reloaded.GRAPH_API_BASE_URL.endswith("/v25.0")
+    finally:
+        importlib.reload(config)
