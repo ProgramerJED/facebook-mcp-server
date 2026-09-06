@@ -93,19 +93,22 @@ class Manager:
         return self._api(account)._request("GET", post_id, {"fields": "likes.summary(true)"}).get("likes", {}).get("summary", {}).get("total_count", 0)
 
     def get_post_insights(self, post_id: str, account: str | None = None) -> dict[str, Any]:
+        # 2026 insight metric set. Meta removed post_impressions / _unique /
+        # post_engaged_users / post_clicks / post_reactions_*_total for ALL API
+        # versions on 2026-06-15. Per-reaction counts now come from the reactions
+        # edge (get_post_reactions_breakdown), not this insights call.
         metrics = [
-            "post_impressions", "post_impressions_unique", "post_impressions_paid",
-            "post_impressions_organic", "post_engaged_users", "post_clicks",
-            "post_reactions_like_total", "post_reactions_love_total", "post_reactions_wow_total",
-            "post_reactions_haha_total", "post_reactions_sorry_total", "post_reactions_anger_total",
+            "post_views", "post_total_media_view_unique", "post_impressions_paid",
+            "post_impressions_organic", "post_activity_by_action_type",
+            "post_clicks_by_type",
         ]
         return self._api(account).get_bulk_insights(post_id, metrics)
 
     def get_post_impressions(self, post_id: str, account: str | None = None) -> dict[str, Any]:
-        return self._api(account).get_insights(post_id, "post_impressions")
+        return self._api(account).get_insights(post_id, "post_views")
 
     def get_post_impressions_unique(self, post_id: str, account: str | None = None) -> dict[str, Any]:
-        return self._api(account).get_insights(post_id, "post_impressions_unique")
+        return self._api(account).get_insights(post_id, "post_total_media_view_unique")
 
     def get_post_impressions_paid(self, post_id: str, account: str | None = None) -> dict[str, Any]:
         return self._api(account).get_insights(post_id, "post_impressions_paid")
@@ -114,28 +117,30 @@ class Manager:
         return self._api(account).get_insights(post_id, "post_impressions_organic")
 
     def get_post_engaged_users(self, post_id: str, account: str | None = None) -> dict[str, Any]:
-        return self._api(account).get_insights(post_id, "post_engaged_users")
+        return self._api(account).get_insights(post_id, "post_activity_by_action_type")
 
     def get_post_clicks(self, post_id: str, account: str | None = None) -> dict[str, Any]:
-        return self._api(account).get_insights(post_id, "post_clicks")
+        return self._api(account).get_insights(post_id, "post_clicks_by_type")
 
+    # Per-reaction totals via the reactions EDGE (the post_reactions_*_total
+    # insight metrics were removed). Graph type tokens: SAD<-sorry, ANGRY<-anger.
     def get_post_reactions_like_total(self, post_id: str, account: str | None = None) -> dict[str, Any]:
-        return self._api(account).get_insights(post_id, "post_reactions_like_total")
+        return self._api(account).get_reactions(post_id, "LIKE")
 
     def get_post_reactions_love_total(self, post_id: str, account: str | None = None) -> dict[str, Any]:
-        return self._api(account).get_insights(post_id, "post_reactions_love_total")
+        return self._api(account).get_reactions(post_id, "LOVE")
 
     def get_post_reactions_wow_total(self, post_id: str, account: str | None = None) -> dict[str, Any]:
-        return self._api(account).get_insights(post_id, "post_reactions_wow_total")
+        return self._api(account).get_reactions(post_id, "WOW")
 
     def get_post_reactions_haha_total(self, post_id: str, account: str | None = None) -> dict[str, Any]:
-        return self._api(account).get_insights(post_id, "post_reactions_haha_total")
+        return self._api(account).get_reactions(post_id, "HAHA")
 
     def get_post_reactions_sorry_total(self, post_id: str, account: str | None = None) -> dict[str, Any]:
-        return self._api(account).get_insights(post_id, "post_reactions_sorry_total")
+        return self._api(account).get_reactions(post_id, "SAD")
 
     def get_post_reactions_anger_total(self, post_id: str, account: str | None = None) -> dict[str, Any]:
-        return self._api(account).get_insights(post_id, "post_reactions_anger_total")
+        return self._api(account).get_reactions(post_id, "ANGRY")
 
     def get_post_top_commenters(self, post_id: str, account: str | None = None) -> list[dict[str, Any]]:
         # Delegate to get_post_comments so callers/tests can override it; only pass
@@ -166,21 +171,22 @@ class Manager:
         return self._api(account).get_post_share_count(post_id)
 
     def get_post_reactions_breakdown(self, post_id: str, account: str | None = None) -> dict[str, Any]:
-        """Return counts for all reaction types on a post."""
-        metrics = [
-            "post_reactions_like_total",
-            "post_reactions_love_total",
-            "post_reactions_wow_total",
-            "post_reactions_haha_total",
-            "post_reactions_sorry_total",
-            "post_reactions_anger_total",
-        ]
-        raw = self._api(account).get_bulk_insights(post_id, metrics)
+        """Return counts for all reaction types on a post, via the reactions EDGE.
+
+        The ``post_reactions_*_total`` insight metrics were removed (2026); counts
+        come from ``GET {post_id}/reactions?type=<TYPE>&summary=total_count``.
+        Keyed by human label (like/love/wow/haha/sorry/anger); Graph type tokens
+        map SAD<-sorry and ANGRY<-anger.
+        """
+        api = self._api(account)
+        type_by_label = {
+            "like": "LIKE", "love": "LOVE", "wow": "WOW",
+            "haha": "HAHA", "sorry": "SAD", "anger": "ANGRY",
+        }
         results: dict[str, Any] = {}
-        for item in raw.get("data", []):
-            name = item.get("name")
-            value = item.get("values", [{}])[0].get("value")
-            results[name] = value
+        for label, reaction_type in type_by_label.items():
+            payload = api.get_reactions(post_id, reaction_type)
+            results[label] = payload.get("summary", {}).get("total_count", 0)
         return results
 
     def bulk_delete_comments(self, comment_ids: list[str], account: str | None = None) -> list[dict[str, Any]]:

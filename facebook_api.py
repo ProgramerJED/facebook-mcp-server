@@ -150,12 +150,30 @@ class FacebookAPI:
                           period: str = "lifetime") -> dict[str, Any]:
         return self.get_insights(post_id, ",".join(metrics), period)
 
+    def get_reactions(self, post_id: str, reaction_type: str,
+                      period: str = "lifetime") -> dict[str, Any]:
+        """Per-reaction total via the reactions EDGE (2026 migration).
+
+        Meta removed the ``post_reactions_*_total`` insight metrics; per-reaction
+        counts now come from ``GET {post_id}/reactions?type=<TYPE>&
+        summary=total_count`` — read ``summary.total_count`` from the payload.
+        Graph type tokens: LIKE/LOVE/WOW/HAHA/SAD/ANGRY (SAD<-sorry, ANGRY<-anger).
+        """
+        return self._request("GET", f"{post_id}/reactions",
+                             {"type": reaction_type, "summary": "total_count",
+                              "limit": 0})
+
     # ── page ──────────────────────────────────────────────────────────────────
     def get_page_fan_count(self) -> int:
-        data = self._request("GET", f"{self.page_id}", {"fields": "fan_count"})
-        return data.get("fan_count", 0)
+        # Meta removed the page ``fan_count`` read; ``followers_count`` is the
+        # live node field replacement (2026 migration).
+        data = self._request("GET", f"{self.page_id}",
+                             {"fields": "followers_count"})
+        return data.get("followers_count", 0)
 
     def get_post_share_count(self, post_id: str) -> int:
+        # POST node ``shares{count}`` is still valid (only the PAGE-node shares
+        # read was removed). ``post_id`` is a post id, so this stays.
         data = self._request("GET", f"{post_id}", {"fields": "shares"})
         return data.get("shares", {}).get("count", 0)
 
