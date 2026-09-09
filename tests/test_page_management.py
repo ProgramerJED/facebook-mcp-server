@@ -146,3 +146,58 @@ def test_manager_delegates_page_management(api, stub, monkeypatch):
     assert m.set_page_cover("https://img/c.jpg")["photo_id"] == "PHOTOX"
     m.pin_post("P1")
     assert stub["calls"][-1]["params"]["is_pinned"] is True
+
+
+# ── Page access token derivation (issue: #210/#200 on write) ─────────────────
+
+def test_page_token_derivation_used_for_writes(stub):
+    """A User/System-User token is auto-exchanged for the Page access token on first
+    use, so page writes (which Facebook rejects with #210/#200 for a non-Page token)
+    go out with the derived Page token."""
+    import facebook_api
+    from conftest import FAKE_TOKEN
+    client = facebook_api.FacebookAPI(
+        page_id="PAGE123", access_token=FAKE_TOKEN,
+        base_url="https://graph.facebook.com/v22.0", timeout=5, max_retries=2)
+    # 1) derivation response carries the Page token; 2) the actual write.
+    stub["queue"].append(FakeResponse({"access_token": "PAGE_TOKEN_XYZ", "id": "PAGE123"}))
+    stub["queue"].append(FakeResponse({"id": "PAGE123_1"}))
+
+    client.post_message("hola")
+
+    derive, write = stub["calls"][0], stub["calls"][1]
+    assert derive["method"] == "GET" and derive["url"].endswith("/PAGE123")
+    assert derive["params"]["fields"] == "access_token"
+    assert derive["params"]["access_token"] == FAKE_TOKEN          # derive with configured token
+    assert write["url"].endswith("/PAGE123/feed")
+    assert write["params"]["access_token"] == "PAGE_TOKEN_XYZ"     # write uses derived token
+
+
+def test_page_token_derivation_is_cached(stub):
+    """Derivation happens once per client, not on every call."""
+    import facebook_api
+    from conftest import FAKE_TOKEN
+    client = facebook_api.FacebookAPI(
+        page_id="PAGE123", access_token=FAKE_TOKEN,
+        base_url="https://graph.facebook.com/v22.0", timeout=5, max_retries=2)
+    stub["queue"].append(FakeResponse({"access_token": "PAGE_TOKEN_XYZ", "id": "PAGE123"}))
+    client.post_message("a")
+    client.post_message("b")
+    derive_calls = [c for c in stub["calls"]
+                    if c["method"] == "GET" and c["params"].get("fields") == "access_token"]
+    assert len(derive_calls) == 1  # derived once, reused
+
+
+def test_page_token_derivation_falls_back_on_failure(stub):
+    """If derivation cannot return a token, the configured token is kept (reads still
+    work); the write then surfaces the Graph error normally."""
+    import facebook_api
+    from conftest import FAKE_TOKEN
+    client = facebook_api.FacebookAPI(
+        page_id="PAGE123", access_token=FAKE_TOKEN,
+        base_url="https://graph.facebook.com/v22.0", timeout=5, max_retries=2)
+    stub["queue"].append(FakeResponse({}, status_code=400))  # derivation yields no token
+    stub["queue"].append(FakeResponse({"id": "ok"}))         # write proceeds with configured token
+    client.post_message("x")
+    write = stub["calls"][1]
+    assert write["params"]["access_token"] == FAKE_TOKEN

@@ -52,6 +52,34 @@ class FacebookAPI:
         self.timeout = timeout if timeout is not None else config.REQUEST_TIMEOUT_SECONDS
         self.max_retries = (max_retries if max_retries is not None
                             else config.MAX_RETRIES)
+        # Page writes (feed posts, cover/profile/metadata, unpublished uploads) require
+        # a PAGE access token; a User / System-User token is rejected with (#210)/(#200).
+        # We derive the Page token from the configured token on first use (mirrors the
+        # Sites Engine backend). Resolved lazily + cached; deriving from a token that is
+        # already the Page token is a harmless no-op that returns the same token.
+        self._page_token_resolved = False
+
+    # ── Page access token derivation (lazy, cached) ───────────────────────────
+    def _ensure_page_token(self) -> None:
+        """Replace ``self.access_token`` with the Page access token derived from the
+        configured token, once. Best-effort: if derivation fails (network, or the
+        token cannot see the Page), keep the configured token — reads may still work
+        and any write surfaces a clear (#210)/(#200) error naming the need for a Page
+        token."""
+        if self._page_token_resolved:
+            return
+        self._page_token_resolved = True
+        try:
+            resp = requests.request(
+                "GET", f"{self.base_url}/{self.page_id}",
+                params={"fields": "access_token", "access_token": self.access_token},
+                json=None, timeout=self.timeout)
+            data = _safe_json(resp)
+            token = data.get("access_token") if isinstance(data, dict) else None
+            if resp.ok and token:
+                self.access_token = token
+        except requests.RequestException:
+            pass  # keep the configured token; a write will raise a clear error
 
     # ── Generic Graph API request (hardened) ──────────────────────────────────
     def _request(self, method: str, endpoint: str, params: dict[str, Any],
@@ -60,6 +88,7 @@ class FacebookAPI:
             raise FacebookAPIError(
                 "Facebook credentials are not configured "
                 "(FACEBOOK_ACCESS_TOKEN / FACEBOOK_PAGE_ID).")
+        self._ensure_page_token()
         url = f"{self.base_url}/{endpoint}"
         call_params = dict(params or {})
         call_params["access_token"] = self.access_token

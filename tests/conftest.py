@@ -16,9 +16,15 @@ FAKE_TOKEN = "EAAsecrettoken1234567890abcdefGHIJ"
 
 @pytest.fixture
 def api():
-    return facebook_api.FacebookAPI(
+    client = facebook_api.FacebookAPI(
         page_id="PAGE123", access_token=FAKE_TOKEN,
         base_url="https://graph.facebook.com/v22.0", timeout=5, max_retries=2)
+    # Treat FAKE_TOKEN as an already-resolved Page token so the lazy Page-token
+    # derivation does not insert an extra Graph call ahead of each test's assertions.
+    # A dedicated test (test_page_token_derivation) exercises the derivation path with
+    # this flag left False.
+    client._page_token_resolved = True
+    return client
 
 
 @pytest.fixture

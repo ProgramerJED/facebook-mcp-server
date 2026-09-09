@@ -166,6 +166,11 @@ def test_method_routes_to_selected_account(tmp_path, monkeypatch, stub):
     monkeypatch.setenv("FACEBOOK_ACCOUNTS_FILE", str(accounts_file))
 
     m = Manager()
+    # This test asserts per-account ROUTING; pre-resolve so the lazy Page-token
+    # derivation (a separate concern, covered in test_page_management) does not insert
+    # a GET ahead of the routed calls.
+    m._api("brand_b")._page_token_resolved = True
+    m._api("brand_a")._page_token_resolved = True
     stub["queue"].append(FakeResponse({"id": "PAGE_B_1"}))
     m.post_to_facebook("hi", account="brand_b")
     call = stub["calls"][0]
@@ -185,6 +190,7 @@ def test_default_account_routes_via_legacy_client(monkeypatch, stub):
     monkeypatch.setattr(config, "PAGE_ACCESS_TOKEN", "LEGACY_TOKEN")
 
     m = Manager()
+    m._api()._page_token_resolved = True  # routing test — skip lazy Page-token derivation
     stub["queue"].append(FakeResponse({"id": "ok"}))
     m.post_to_facebook("hi")  # no account → default
     call = stub["calls"][0]
