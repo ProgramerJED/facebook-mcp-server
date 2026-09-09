@@ -104,10 +104,30 @@ Insights: `get_post_insights` and per-metric variants (impressions total/unique/
 engaged users, clicks, reactions), `get_post_reactions_breakdown`, `get_number_of_likes`,
 `get_number_of_comments`, `get_post_share_count`, `get_page_fan_count`.
 Page: `get_page_info`.
+Page management / metadata: `set_page_cover`, `set_page_profile_picture`,
+`update_page_info` (about, description, phone, emails, website, hours, location),
+`pin_post`, `unpin_post`, `list_page_photos`, `upload_page_photo`.
 Accounts: `list_facebook_accounts` (lists configured account keys + page ids; no tokens).
 
 Every tool above (except `filter_negative_comments`, which is pure) accepts an optional
 `account` argument to target a specific configured Page; omit it to use the default.
+
+### Required token scopes
+
+Posting/comments/insights work with the usual Page scopes (`pages_manage_posts`,
+`pages_read_engagement`, `pages_manage_engagement`, `pages_show_list`). The
+page-management tools need extra scopes on the account's System-User/Page token — no App
+Review for your own Page; regenerate the token with them in Meta Business Settings →
+System Users:
+
+| Tool | Extra scope |
+|------|-------------|
+| `set_page_cover`, `set_page_profile_picture`, `update_page_info` | `pages_manage_metadata` (+ `business_management`) |
+| `pin_post`, `unpin_post` | `pages_manage_posts` |
+| `list_page_photos`, `upload_page_photo` | `pages_manage_posts` / `pages_read_engagement` |
+
+A call made with a token missing the scope surfaces a clear, token-safe error naming the
+permission (the token is never echoed).
 
 ## Development
 

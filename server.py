@@ -333,6 +333,85 @@ def get_page_info(account: str = "") -> dict[str, Any]:
     return manager.get_page_info(account=account or None)
 
 
+# ── Page management / metadata (issue #2) ─────────────────────────────────────
+# Cover / profile / info need the account token to carry `pages_manage_metadata`
+# (+ `business_management`); pin/unpin need `pages_manage_posts`. A missing scope is
+# returned as a clear (token-safe) error.
+
+@mcp.tool()
+def set_page_cover(image_url: str, account: str = "") -> dict[str, Any]:
+    """Set the Facebook Page cover photo from a public image URL.
+    Uploads the image unpublished, then attaches it as the Page cover.
+    Requires the token scope `pages_manage_metadata`.
+    Input: image_url (str), account (str, optional — which configured Page; default = FACEBOOK_DEFAULT_ACCOUNT)
+    Output: dict (Graph response) with the created photo_id
+    """
+    return manager.set_page_cover(image_url, account=account or None)
+
+
+@mcp.tool()
+def set_page_profile_picture(image_url: str, account: str = "") -> dict[str, Any]:
+    """Set the Facebook Page profile picture from a public image URL.
+    Requires the token scope `pages_manage_metadata`.
+    Input: image_url (str), account (str, optional — which configured Page; default = FACEBOOK_DEFAULT_ACCOUNT)
+    Output: dict of the Graph response
+    """
+    return manager.set_page_profile_picture(image_url, account=account or None)
+
+
+@mcp.tool()
+def update_page_info(fields: dict[str, Any], account: str = "") -> dict[str, Any]:
+    """Update the Page's contact info / metadata.
+    Allowed keys: about, description, phone, emails, website, hours, location
+    (object/array values like emails/hours/location are JSON-encoded automatically;
+    unknown keys are rejected). Requires `pages_manage_metadata` (+ `business_management`).
+    Input: fields (dict), account (str, optional — which configured Page; default = FACEBOOK_DEFAULT_ACCOUNT)
+    Output: dict of the Graph response
+    """
+    return manager.update_page_info(fields, account=account or None)
+
+
+@mcp.tool()
+def pin_post(post_id: str, account: str = "") -> dict[str, Any]:
+    """Pin a post to the top of the Page. Requires `pages_manage_posts`.
+    Input: post_id (str), account (str, optional — which configured Page; default = FACEBOOK_DEFAULT_ACCOUNT)
+    Output: dict of the Graph response
+    """
+    return manager.pin_post(post_id, account=account or None)
+
+
+@mcp.tool()
+def unpin_post(post_id: str, account: str = "") -> dict[str, Any]:
+    """Unpin a previously pinned post. Requires `pages_manage_posts`.
+    Input: post_id (str), account (str, optional — which configured Page; default = FACEBOOK_DEFAULT_ACCOUNT)
+    Output: dict of the Graph response
+    """
+    return manager.unpin_post(post_id, account=account or None)
+
+
+@mcp.tool()
+def list_page_photos(limit: int = 25, account: str = "") -> dict[str, Any]:
+    """List the Page's OWN uploaded photos so one can be reused as a post image or
+    cover source. Read-only.
+    Input: limit (int, default 25), account (str, optional — which configured Page; default = FACEBOOK_DEFAULT_ACCOUNT)
+    Output: dict `{photos: [{photo_id, caption, source_url, created_time}]}`
+    """
+    return manager.list_page_photos(limit, account=account or None)
+
+
+@mcp.tool()
+def upload_page_photo(image_url: str, published: bool = False, caption: str = "",
+                      account: str = "") -> dict[str, Any]:
+    """Upload a photo to the Page — published to the feed, or unpublished (default)
+    so it can be reused as a cover/post source without creating a feed story.
+    Input: image_url (str), published (bool, default False), caption (str, optional),
+    account (str, optional — which configured Page; default = FACEBOOK_DEFAULT_ACCOUNT)
+    Output: dict `{photo_id, ...}`
+    """
+    return manager.upload_page_photo(image_url, published=published, caption=caption,
+                                     account=account or None)
+
+
 
 if __name__ == "__main__":
     # Run the MCP server over stdio (default transport). Without this entrypoint,
