@@ -180,3 +180,97 @@ class FacebookAPI:
     def get_page_info(self) -> dict[str, Any]:
         fields = "name,about,category,website,emails,phone,description,location"
         return self._request("GET", f"{self.page_id}", {"fields": fields})
+
+    # ── page management / metadata (issue #2) ─────────────────────────────────
+    # These write the Page's identity, not its feed. Cover/profile/info need the
+    # token to carry ``pages_manage_metadata`` (+ ``business_management``); pin/unpin
+    # need ``pages_manage_posts``. A missing scope surfaces as a scrubbed
+    # FacebookAPIError (never leaks the token) via ``_request``.
+
+    # Page fields whose value is an object/array and must be JSON-encoded as a form
+    # param (scalars — about/phone/website/description — pass through as-is).
+    _PAGE_INFO_JSON_FIELDS = {"emails", "hours", "location"}
+    _PAGE_INFO_ALLOWED = {
+        "about", "description", "phone", "emails", "website", "hours", "location"}
+
+    def set_page_profile_picture(self, image_url: str) -> dict[str, Any]:
+        """Set the Page profile picture from a public image URL."""
+        return self._request("POST", f"{self.page_id}/picture", {"url": image_url})
+
+    def set_page_cover(self, image_url: str) -> dict[str, Any]:
+        """Set the Page cover photo. Two steps: upload the image UNPUBLISHED (so it
+        never lands in the feed as a story), then attach the resulting photo id as the
+        Page ``cover``. Returns the attach response merged with the ``photo_id``."""
+        photo = self._request("POST", f"{self.page_id}/photos",
+                             {"url": image_url, "published": False, "no_story": True})
+        photo_id = photo.get("id")
+        if not photo_id:
+            raise FacebookAPIError("cover upload did not return a photo id")
+        result = self._request("POST", f"{self.page_id}", {"cover": photo_id})
+        return {**result, "photo_id": photo_id}
+
+    def update_page_info(self, fields: dict[str, Any]) -> dict[str, Any]:
+        """Update Page contact info / metadata. Allowed keys: about, description,
+        phone, emails, website, hours, location. Object/array values (emails, hours,
+        location) are JSON-encoded; unknown keys are rejected."""
+        import json as _json
+        if not fields:
+            raise FacebookAPIError("update_page_info requires at least one field")
+        unknown = sorted(set(fields) - self._PAGE_INFO_ALLOWED)
+        if unknown:
+            raise FacebookAPIError(
+                "unknown page-info field(s): " + ", ".join(unknown)
+                + "; allowed: " + ", ".join(sorted(self._PAGE_INFO_ALLOWED)))
+        params: dict[str, Any] = {}
+        for key, value in fields.items():
+            if key in self._PAGE_INFO_JSON_FIELDS and not isinstance(value, str):
+                params[key] = _json.dumps(value)
+            else:
+                params[key] = value
+        return self._request("POST", f"{self.page_id}", params)
+
+    def pin_post(self, post_id: str) -> dict[str, Any]:
+        """Pin a post to the top of the Page."""
+        return self._request("POST", f"{post_id}", {"is_pinned": True})
+
+    def unpin_post(self, post_id: str) -> dict[str, Any]:
+        """Unpin a previously pinned post."""
+        return self._request("POST", f"{post_id}", {"is_pinned": False})
+
+    def list_page_photos(self, limit: int = 25) -> dict[str, Any]:
+        """List the Page's OWN uploaded photos (type=uploaded) so one can be reused
+        as a post image or cover source. Returns
+        ``{photos: [{photo_id, caption, source_url, created_time}]}`` — ``source_url``
+        is the largest available image for each photo."""
+        data = self._request("GET", f"{self.page_id}/photos", {
+            "type": "uploaded", "limit": limit,
+            "fields": "id,name,created_time,images"})
+        photos = []
+        for node in data.get("data", []):
+            images = node.get("images") or []
+            # Graph returns images largest-first; fall back to the first if unsorted.
+            source_url = None
+            if images:
+                largest = max(
+                    images, key=lambda im: (im.get("width") or 0) * (im.get("height") or 0))
+                source_url = largest.get("source")
+            photos.append({
+                "photo_id": node.get("id"),
+                "caption": node.get("name"),
+                "source_url": source_url,
+                "created_time": node.get("created_time"),
+            })
+        return {"photos": photos}
+
+    def upload_page_photo(self, image_url: str, published: bool = False,
+                          caption: str = "") -> dict[str, Any]:
+        """Upload a photo to the Page — published to the feed, or unpublished
+        (``published=False``, the default) so it can be reused as a cover/post source
+        without creating a feed story. Returns ``{photo_id, post_id?}``."""
+        params: dict[str, Any] = {"url": image_url, "published": published}
+        if caption:
+            params["caption"] = caption
+        if not published:
+            params["no_story"] = True
+        result = self._request("POST", f"{self.page_id}/photos", params)
+        return {"photo_id": result.get("id"), **result}

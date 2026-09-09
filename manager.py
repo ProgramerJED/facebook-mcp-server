@@ -227,3 +227,26 @@ class Manager:
 
     def get_page_info(self, account: str | None = None) -> dict[str, Any]:
         return self._api(account).get_page_info()
+
+    # ── page management / metadata (issue #2) ─────────────────────────────────
+    def set_page_cover(self, image_url: str, account: str | None = None) -> dict[str, Any]:
+        return self._api(account).set_page_cover(image_url)
+
+    def set_page_profile_picture(self, image_url: str, account: str | None = None) -> dict[str, Any]:
+        return self._api(account).set_page_profile_picture(image_url)
+
+    def update_page_info(self, fields: dict[str, Any], account: str | None = None) -> dict[str, Any]:
+        return self._api(account).update_page_info(fields)
+
+    def pin_post(self, post_id: str, account: str | None = None) -> dict[str, Any]:
+        return self._api(account).pin_post(post_id)
+
+    def unpin_post(self, post_id: str, account: str | None = None) -> dict[str, Any]:
+        return self._api(account).unpin_post(post_id)
+
+    def list_page_photos(self, limit: int = 25, account: str | None = None) -> dict[str, Any]:
+        return self._api(account).list_page_photos(limit)
+
+    def upload_page_photo(self, image_url: str, published: bool = False,
+                          caption: str = "", account: str | None = None) -> dict[str, Any]:
+        return self._api(account).upload_page_photo(image_url, published, caption)
